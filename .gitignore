@@ -1,0 +1,17 @@
+# Python 本地环境与缓存
+backend/.venv/
+__pycache__/
+*.pyc
+
+# 后端运行时生成的项目分析与规则输出
+backend/storage/
+
+# 前端依赖与构建产物
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# 本地日志和环境变量
+*.log
+.env
+backend/.env
