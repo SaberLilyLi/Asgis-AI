@@ -302,7 +302,3 @@ set VITE_API_BASE_URL=http://127.0.0.1:8001
 ## 示例数据
 
 `sample-data/vue3-admin-sample` 是一个用于验证 Pattern Analysis 的极简 Vue3 项目。可以将该目录压缩为 zip 后上传，也可以把同等结构推到 GitHub / Gitee 后通过仓库地址分析。
-
-## 简历表述参考
-
-Asgis AI：独立设计并开发 AI 工程规范分析助手，支持 Vue / React / 小程序 / uni-app 项目扫描，自动抽取工程规范并生成 Cline / Cursor 规则文件，沉淀“需求方案 + 项目规范 + AI 编码”的工程化落地流程。
