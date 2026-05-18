@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
+from app.models.error_model import raise_api_error
 from app.models.rule_model import RepoAnalyzeRequest
 from app.services.analysis_task_service import AnalysisTaskService
 from app.services.project_service import ProjectService
@@ -20,14 +21,7 @@ def analyze_repo(payload: RepoAnalyzeRequest, background_tasks: BackgroundTasks)
     try:
         RepoService.validate_repo_url(payload.git_url)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "INVALID_REPO_URL",
-                "message": str(exc),
-                "suggestion": "请使用 GitHub / Gitee 的 HTTPS 仓库地址。",
-            },
-        ) from exc
+        raise_api_error(400, "INVALID_GIT_URL", str(exc), "请使用 GitHub / Gitee 的 HTTPS 仓库地址。")
 
     project_id = str(uuid.uuid4())
     repo_dir = ProjectService.get_project_source_dir(project_id)
@@ -38,10 +32,9 @@ def analyze_repo(payload: RepoAnalyzeRequest, background_tasks: BackgroundTasks)
         ProjectService.update_project_status(
             project_id,
             "queued",
-            "queued",
+            "cloning",
             5,
             "仓库分析任务已创建",
-            code="TASK_QUEUED",
             suggestion="请等待后台任务开始克隆仓库。",
         )
         background_tasks.add_task(
@@ -61,11 +54,4 @@ def analyze_repo(payload: RepoAnalyzeRequest, background_tasks: BackgroundTasks)
         }
     except Exception as exc:
         logger.exception("仓库分析任务创建失败")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "TASK_CREATE_FAILED",
-                "message": "仓库分析任务创建失败",
-                "suggestion": "请稍后重试，或检查后端服务日志。",
-            },
-        ) from exc
+        raise_api_error(500, "UNKNOWN_ERROR", "仓库分析任务创建失败", "请稍后重试，或检查后端服务日志。")

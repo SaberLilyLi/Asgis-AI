@@ -36,7 +36,7 @@ class RepoService:
             cls._run_git_clone(clone_url, clone_dir)
             repo_size = cls._directory_size(clone_dir)
             if repo_size > cls.MAX_REPO_BYTES:
-                raise ValueError("仓库体积超过限制，当前限制为 120MB")
+                raise ValueError("REPO_TOO_LARGE")
             cls._move_clone_to_target(clone_dir, target_dir)
         except TimeoutError:
             raise
@@ -76,18 +76,20 @@ class RepoService:
             ]
         ):
             return RepoError(
-                "REPO_AUTH_REQUIRED",
+                "PRIVATE_REPO_DENIED",
                 "仓库需要登录或 Token",
                 "请填写 GitHub/Gitee 访问 Token，或确认仓库为公开仓库。",
             )
         if "repository not found" in lower_message or "not found" in lower_message:
-            return RepoError("REPO_NOT_FOUND", "仓库不存在或无权限访问", "请检查仓库地址、大小写、可见性和访问权限。")
+            return RepoError("PRIVATE_REPO_DENIED", "仓库不存在或无权限访问", "请检查仓库地址、大小写、可见性和访问权限。")
         if "could not resolve host" in lower_message or "failed to connect" in lower_message:
-            return RepoError("REPO_NETWORK_ERROR", "无法连接仓库平台", "请检查网络、代理、防火墙或稍后重试。")
+            return RepoError("REPO_CLONE_FAILED", "无法连接仓库平台", "请检查网络、代理、防火墙或稍后重试。")
         if "early eof" in lower_message or "remote end hung up" in lower_message:
-            return RepoError("REPO_DOWNLOAD_INTERRUPTED", "仓库下载中断", "请稍后重试，或确认仓库体积是否过大。")
+            return RepoError("REPO_CLONE_FAILED", "仓库下载中断", "请稍后重试，或确认仓库体积是否过大。")
         if "permission denied" in lower_message or "access is denied" in lower_message or "winerror 5" in lower_message or "拒绝访问" in message:
             return RepoError("LOCAL_FILE_LOCKED", "本机临时目录文件被占用或拒绝访问", "请稍后重试，必要时关闭杀毒软件对项目目录的实时扫描。")
+        if "repo_too_large" in lower_message or "体积超过限制" in message:
+            return RepoError("REPO_TOO_LARGE", "仓库体积超过限制", "请缩小仓库体积，或改用只包含前端工程的 zip 上传。")
         return RepoError("REPO_CLONE_FAILED", "仓库分析失败", "请确认仓库存在、权限可访问且网络正常。")
 
     @classmethod

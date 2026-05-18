@@ -151,8 +151,45 @@ h1 {
 
 .analysis-item {
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: space-between;
   color: #263247;
+  line-height: 1.6;
+}
+
+.analysis-item p {
+  margin: 6px 0 0;
+  color: #5d6b82;
+}
+
+.rule-evidence {
+  margin-top: 10px;
+}
+
+.rule-evidence span {
+  display: block;
+  margin-bottom: 6px;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rule-evidence em {
+  color: #738095;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.download-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.download-panel p {
+  margin: 6px 0 0;
+  color: #738095;
+  font-size: 13px;
   line-height: 1.6;
 }
 

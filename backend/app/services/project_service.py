@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.models.task_model import now_iso
 from app.services.task_db_service import TaskDBService
 
 
@@ -58,7 +59,7 @@ class ProjectService:
         cls.update_project_status(
             project_id=project_id,
             status="success",
-            stage="completed",
+            stage="done",
             progress=100,
             message="工程规范分析完成",
             analysis=analysis,
@@ -98,30 +99,40 @@ class ProjectService:
         """保存项目分析进度，供前端轮询展示。"""
         cls.ensure_project_dirs(project_id)
         current = cls.load_project_status(project_id, allow_missing=True)
+        normalized_status = cls._normalize_status(status)
+        normalized_stage = cls._normalize_stage(stage, normalized_status)
+        now = now_iso()
+        created_at = current.get("created_at") or now
+        error_code = code if normalized_status == "failed" else None
+        error_message = (error or message) if normalized_status == "failed" else None
         payload = {
             **current,
+            "task_id": project_id,
             "project_id": project_id,
-            "status": status,
-            "stage": stage,
+            "status": normalized_status,
+            "stage": normalized_stage,
             "progress": max(0, min(progress, 100)),
             "message": message,
             "code": code,
             "suggestion": suggestion,
             "error": error,
+            "error_code": error_code,
+            "error_message": error_message,
             "analysis": analysis if analysis is not None else current.get("analysis"),
-            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "created_at": created_at,
+            "updated_at": now,
         }
         status_path = cls.get_project_dir(project_id) / "status.json"
         status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         TaskDBService.update_task(
             project_id=project_id,
-            status=status,
-            stage=stage,
+            status=normalized_status,
+            stage=normalized_stage,
             progress=max(0, min(progress, 100)),
             message=message,
-            code=code,
+            code=error_code,
             suggestion=suggestion,
-            error=error,
+            error=error_message,
             analysis=payload.get("analysis"),
         )
 
@@ -133,4 +144,40 @@ class ProjectService:
             if allow_missing:
                 return {}
             raise FileNotFoundError(project_id)
-        return json.loads(status_path.read_text(encoding="utf-8"))
+        payload = json.loads(status_path.read_text(encoding="utf-8"))
+        normalized_status = cls._normalize_status(payload.get("status", "queued"))
+        normalized_stage = cls._normalize_stage(payload.get("stage", "uploading"), normalized_status)
+        payload["task_id"] = payload.get("task_id") or payload.get("project_id") or project_id
+        payload["project_id"] = payload.get("project_id") or project_id
+        payload["status"] = normalized_status
+        payload["stage"] = normalized_stage
+        payload["error_code"] = payload.get("error_code") if normalized_status == "failed" else None
+        payload["error_message"] = payload.get("error_message") if normalized_status == "failed" else None
+        payload["created_at"] = payload.get("created_at") or payload.get("updated_at") or now_iso()
+        payload["updated_at"] = payload.get("updated_at") or payload["created_at"]
+        return payload
+
+    @staticmethod
+    def _normalize_status(status: str) -> str:
+        """把历史状态收敛到 queued/running/success/failed。"""
+        if status in {"queued", "running", "success", "failed"}:
+            return status
+        return "failed" if status in {"error"} else "running"
+
+    @staticmethod
+    def _normalize_stage(stage: str, status: str) -> str:
+        """把历史阶段收敛到第一阶段固定 stage。"""
+        if status == "success":
+            return "done"
+        if status == "failed":
+            return "error"
+        stage_map = {
+            "queued": "uploading",
+            "extracting": "scanning",
+            "completed": "done",
+            "failed": "error",
+        }
+        normalized = stage_map.get(stage, stage)
+        if normalized in {"uploading", "cloning", "scanning", "analyzing", "generating", "packaging", "done", "error"}:
+            return normalized
+        return "analyzing" if status == "running" else "uploading"

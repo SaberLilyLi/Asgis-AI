@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.models.task_model import now_iso
+
 
 class TaskDBService:
     """SQLite 任务服务，用于持久化分析任务和状态历史。"""
@@ -57,11 +59,11 @@ class TaskDBService:
                     source_type,
                     source_ref,
                     "queued",
-                    "queued",
+                    "uploading" if source_type == "zip" else "cloning",
                     5,
-                    "TASK_QUEUED",
+                    None,
                     "任务已创建",
-                    "请等待后台任务开始执行。",
+                    None,
                     now,
                     now,
                 ),
@@ -177,9 +179,12 @@ class TaskDBService:
         payload = dict(row)
         payload["tech_stack"] = json.loads(payload.pop("tech_stack_json") or "{}")
         payload["stats"] = json.loads(payload.pop("stats_json") or "{}")
+        payload["task_id"] = payload["project_id"]
+        payload["error_code"] = payload["code"] if payload.get("status") == "failed" else None
+        payload["error_message"] = payload["error"] if payload.get("status") == "failed" else None
         return payload
 
     @staticmethod
     def _now() -> str:
         """返回 ISO 时间。"""
-        return datetime.now().isoformat(timespec="seconds")
+        return now_iso()

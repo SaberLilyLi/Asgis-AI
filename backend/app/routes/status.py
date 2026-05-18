@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.models.error_model import raise_api_error
 from app.services.project_service import ProjectService
 
 
@@ -12,4 +13,4 @@ def get_project_status(project_id: str) -> dict:
     try:
         return ProjectService.load_project_status(project_id)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="project_id 不存在") from exc
+        raise_api_error(404, "TASK_NOT_FOUND")

@@ -11,7 +11,7 @@ class PatternAnalyzerService:
         """执行 API、状态管理、页面、组件、hooks、权限、小程序等规范识别。"""
         paths = [item["path"] for item in files]
         joined_content = "\n".join(item["content"] for item in files)
-        tech_stack = cls._detect_tech_stack(files, joined_content)
+        tech_stack = cls._detect_tech_stack_v2(files, joined_content)
         patterns = {
             "api": cls._analyze_api(files),
             "state": cls._analyze_state(files, joined_content),
@@ -119,6 +119,175 @@ class PatternAnalyzerService:
             "state": state,
             "http": http,
             "build": build,
+        }
+
+    @staticmethod
+    def _detect_tech_stack_v2(files: list[dict[str, str]], content: str) -> dict[str, Any]:
+        """使用证据加权方式识别项目技术栈，避免普通文本关键词造成 Vue / React 误判。"""
+        paths = [item["path"] for item in files]
+        package_json = next((item["content"] for item in files if item["path"].endswith("package.json")), "")
+        source = f"{package_json}\n{content}"
+        lower_source = source.lower()
+        lower_package = package_json.lower()
+
+        vue_file_count = sum(1 for path in paths if path.endswith(".vue"))
+        react_file_count = sum(1 for path in paths if path.endswith((".tsx", ".jsx")))
+        miniapp_template_count = sum(1 for path in paths if path.endswith((".wxml", ".axml", ".swan", ".ttml")))
+        miniapp_style_count = sum(1 for path in paths if path.endswith((".wxss", ".acss", ".ttss")))
+        has_pages_json = any(path.endswith("pages.json") for path in paths)
+        has_manifest_json = any(path.endswith("manifest.json") for path in paths)
+        has_app_json = any(path.endswith("app.json") for path in paths)
+        has_app_config = any(path.endswith(("app.config.ts", "app.config.js")) for path in paths)
+
+        scores: dict[str, int] = {"uni-app": 0, "Taro": 0, "小程序": 0, "Vue": 0, "React": 0}
+        evidence: dict[str, list[str]] = {key: [] for key in scores}
+
+        def add_score(key: str, score: int, reason: str) -> None:
+            scores[key] += score
+            evidence[key].append(reason)
+
+        # Vue 强证据优先使用文件、依赖和官方插件，不再把任意文本中的 vue/react 作为主判断依据。
+        if vue_file_count:
+            add_score("Vue", 6 + min(vue_file_count, 3), f"发现 {vue_file_count} 个 .vue 文件")
+        if '"vue"' in lower_package or "vue@" in lower_package:
+            add_score("Vue", 4, "package.json 包含 vue 依赖")
+        if "@vitejs/plugin-vue" in lower_package:
+            add_score("Vue", 4, "使用 @vitejs/plugin-vue")
+        if "vue-router" in lower_source:
+            add_score("Vue", 2, "使用 vue-router")
+        if "pinia" in lower_source or "definestore" in lower_source:
+            add_score("Vue", 2, "使用 Pinia")
+        if any(path.startswith("src/views/") for path in paths):
+            add_score("Vue", 1, "存在 src/views 目录")
+        if any(path.startswith("src/components/") for path in paths):
+            add_score("Vue", 1, "存在 src/components 目录")
+
+        # React 只采纳文件、依赖、官方插件和典型 API 作为证据，避免 README 中的 react 字符串污染判断。
+        if react_file_count:
+            add_score("React", 6 + min(react_file_count, 3), f"发现 {react_file_count} 个 .tsx/.jsx 文件")
+        if '"react"' in lower_package:
+            add_score("React", 4, "package.json 包含 react 依赖")
+        if "react-dom" in lower_package:
+            add_score("React", 3, "package.json 包含 react-dom 依赖")
+        if "@vitejs/plugin-react" in lower_package:
+            add_score("React", 4, "使用 @vitejs/plugin-react")
+        if "react-router" in lower_source or "reactrouter" in lower_source:
+            add_score("React", 2, "使用 React Router")
+        if "usestate(" in lower_source or "useeffect(" in lower_source or "createroot(" in lower_source:
+            add_score("React", 1, "出现 React 常用 API")
+
+        if has_pages_json:
+            add_score("uni-app", 6, "存在 pages.json")
+        if has_manifest_json:
+            add_score("uni-app", 5, "存在 manifest.json")
+        if "uni-app" in lower_package or "@dcloudio" in lower_package:
+            add_score("uni-app", 4, "package.json 包含 uni-app / DCloud 依赖")
+        if "uni." in lower_source:
+            add_score("uni-app", 2, "出现 uni.* API")
+
+        if "@tarojs" in lower_package or "@tarojs" in lower_source:
+            add_score("Taro", 6, "存在 @tarojs 相关依赖或调用")
+        if has_app_config:
+            add_score("Taro", 4, "存在 app.config.ts / app.config.js")
+        if '"taro"' in lower_package:
+            add_score("Taro", 3, "package.json 包含 taro 依赖")
+
+        if has_app_json:
+            add_score("小程序", 5, "存在 app.json")
+        if miniapp_template_count:
+            add_score("小程序", 4 + min(miniapp_template_count, 3), f"发现 {miniapp_template_count} 个模板文件")
+        if miniapp_style_count:
+            add_score("小程序", 2 + min(miniapp_style_count, 2), f"发现 {miniapp_style_count} 个样式文件")
+        if "wx." in lower_source:
+            add_score("小程序", 2, "出现 wx.* API")
+
+        priority = ["uni-app", "Taro", "小程序", "Vue", "React"]
+        project_type = max(priority, key=lambda key: (scores[key], -priority.index(key)))
+        best_score = scores[project_type]
+
+        if best_score <= 0:
+            project_type = "Unknown"
+            frontend = "Unknown"
+            confidence = 0.0
+            project_evidence: list[str] = []
+            detected_frameworks: list[str] = []
+        else:
+            detected_frameworks = [key for key in priority if scores[key] > 0]
+            project_evidence = evidence[project_type]
+            confidence = round(min(best_score / 10, 1.0), 2)
+            if project_type == "Vue":
+                frontend = "Vue3" if '"vue": "3' in lower_package or '"vue": "^3' in lower_package or "vue@3" in lower_package else "Vue"
+            elif project_type == "React":
+                frontend = "React"
+            elif project_type == "uni-app":
+                frontend = "uni-app"
+            elif project_type == "Taro":
+                frontend = "Taro"
+            else:
+                frontend = "原生小程序"
+
+        ui_candidates = [
+            ("Element Plus", "element-plus"),
+            ("Ant Design", "antd"),
+            ("Ant Design Mobile", "antd-mobile"),
+            ("Vant", "vant"),
+            ("Naive UI", "naive-ui"),
+            ("Arco Design", "@arco-design"),
+            ("TDesign", "tdesign"),
+            ("uView", "uview"),
+        ]
+        ui = next((name for name, keyword in ui_candidates if keyword in lower_source), "Unknown")
+
+        if "pinia" in lower_source or "definestore" in lower_source:
+            state = "Pinia"
+        elif "vuex" in lower_source:
+            state = "Vuex"
+        elif "redux" in lower_source or "@reduxjs/toolkit" in lower_source:
+            state = "Redux"
+        elif "zustand" in lower_source:
+            state = "Zustand"
+        elif "mobx" in lower_source:
+            state = "MobX"
+        else:
+            state = "Unknown"
+
+        if "axios" in lower_source:
+            http = "Axios"
+        elif "umi-request" in lower_source:
+            http = "umi-request"
+        elif "uni.request" in lower_source:
+            http = "uni.request"
+        elif "wx.request" in lower_source:
+            http = "wx.request"
+        elif "request(" in lower_source or "fetch(" in lower_source:
+            http = "Fetch/request"
+        else:
+            http = "Unknown"
+
+        if "next" in lower_source:
+            build = "Next.js"
+        elif "vite" in lower_source:
+            build = "Vite"
+        elif "webpack" in lower_source:
+            build = "Webpack"
+        elif has_app_json or has_pages_json or has_manifest_json:
+            build = "小程序构建"
+        else:
+            build = "Unknown"
+
+        return {
+            "project_type": project_type,
+            "project_type_confidence": confidence,
+            "project_type_evidence": project_evidence,
+            "detected_frameworks": detected_frameworks,
+            "frontend": frontend,
+            "language": "TypeScript" if any(path.endswith((".ts", ".tsx")) for path in paths) else "JavaScript",
+            "ui": ui,
+            "state": state,
+            "http": http,
+            "build": build,
+            "framework_scores": scores,
+            "framework_evidence": evidence,
         }
 
     @staticmethod
@@ -303,4 +472,3 @@ class PatternAnalyzerService:
         if patterns["pages"]["non_index_pages"]:
             recommendations.append("新增页面应优先复用项目已有 pages/views/app 目录组织方式")
         return recommendations
-

@@ -7,9 +7,10 @@ Asgis AI 是一个面向前端工程的 AI Coding 规范分析平台。它可以
 ## 项目亮点
 
 - **AI Coding 工程化闭环**：从项目扫描、规范抽取、规则生成，到 Cline / Cursor 约束落地，形成“规范先行”的 AI 开发流程。
+- **证据加权识别**：项目类型识别不再依赖单一关键词，而是综合 `.vue`、`.tsx/.jsx`、`pages.json`、`app.json`、`vue` / `react` 依赖等强证据打分。
 - **多技术栈识别**：支持 Vue3、React、原生小程序、Taro、uni-app 项目的工程结构和常见编码模式识别。
 - **规则质量增强**：规则输出包含项目技术栈、工程规范、AI Coding Rules、禁止规则和开发流程，避免只生成泛泛而谈的提示词。
-- **分析证据可视化**：每类规范都能展示对应来源文件，便于解释“为什么生成这条规则”。
+- **分析证据可视化**：每类规范都能展示对应来源文件和识别依据，便于解释“为什么生成这条规则”。
 - **任务数据库化**：使用 SQLite 保存分析任务、状态、进度和结果，支持历史任务追踪。
 - **一键规则包下载**：一次性导出 `rules.md`、`development-flow.md`、`.clinerules`、`cursor-rules.md`。
 - **企业级错误提示**：针对仓库地址、权限、网络、clone 超时、仓库大小等场景返回细化错误码和修复建议。
@@ -75,12 +76,12 @@ flowchart TB
 
 Asgis AI 会生成四类结果：
 
-| 文件                  | 用途                                        |
-| --------------------- | ------------------------------------------- |
-| `rules.md`            | 完整项目工程规范，适合团队评审和归档        |
+| 文件 | 用途 |
+| --- | --- |
+| `rules.md` | 完整项目工程规范，适合团队评审和归档 |
 | `development-flow.md` | AI 开发流程，只引用规范，不重复展开规范内容 |
-| `.clinerules`         | 面向 Cline 的强约束规则                     |
-| `cursor-rules.md`     | 面向 Cursor 的中文规则                      |
+| `.clinerules` | 面向 Cline 的强约束规则 |
+| `cursor-rules.md` | 面向 Cursor 的中文规则 |
 
 规则内容包含：
 
@@ -302,3 +303,20 @@ set VITE_API_BASE_URL=http://127.0.0.1:8001
 ## 示例数据
 
 `sample-data/vue3-admin-sample` 是一个用于验证 Pattern Analysis 的极简 Vue3 项目。可以将该目录压缩为 zip 后上传，也可以把同等结构推到 GitHub / Gitee 后通过仓库地址分析。
+
+## 面试讲解点
+
+可以从“AI 编码失控”这个真实问题切入：普通 Cline / Cursor 直接根据需求生成代码时，容易忽略项目已有的 API 封装、组件规范、状态管理和权限逻辑，导致代码风格不一致、维护成本变高。Asgis AI 的核心价值是先分析已有工程，抽取项目级规范，再生成 AI Coding Rules，让后续 AI 编码工具在明确约束下开发。
+
+讲解顺序建议：
+
+1. **项目背景**：为了解决 AI Coding 生成代码不符合团队工程规范的问题，设计了 Asgis AI。
+2. **核心流程**：上传 zip 或输入 GitHub / Gitee 仓库地址，后端扫描源码，抽取工程模式，生成 `rules.md`、`.clinerules`、`cursor-rules.md` 和 `development-flow.md`。
+3. **技术实现**：前端使用 Vue3 + TypeScript + Element Plus，后端使用 FastAPI 分层设计，扫描、仓库解析、规范分析、规则生成分别拆成独立 service。
+4. **工程亮点**：支持任务数据库化、分析进度状态、细化错误提示、证据可视化、一键下载规则包，以及 Vue / React / 小程序 / uni-app 多项目类型识别。
+5. **落地价值**：它不是单纯的 Prompt 工具，而是把“项目规范 -> 需求方案 -> AI 编码”串成了一套可复用流程，可以和 IntelliDev、Cline、Cursor 组合使用。
+6. **后续扩展**：未来可以接入 AST、RAG、团队规则库、PR Review 和代码质量评分，但当前 MVP 有意聚焦规则抽取和规则生成，避免范围过大。
+
+## 简历表述参考
+
+Asgis AI：独立设计并开发 AI 工程规范分析助手，支持 Vue / React / 小程序 / uni-app 项目扫描，自动抽取工程规范并生成 Cline / Cursor 规则文件，沉淀“需求方案 + 项目规范 + AI 编码”的工程化落地流程。
