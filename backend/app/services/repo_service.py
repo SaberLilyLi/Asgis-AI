@@ -20,8 +20,8 @@ class RepoError:
 class RepoService:
     """Git 仓库服务，负责 URL 校验、Token clone 和安全限制。"""
 
-    CLONE_TIMEOUT_SECONDS = 90
-    MAX_REPO_BYTES = 120 * 1024 * 1024
+    CLONE_TIMEOUT_SECONDS = 180
+    MAX_REPO_BYTES = 200 * 1024 * 1024
     ALLOWED_HOSTS = {"github.com", "gitee.com"}
 
     @classmethod
