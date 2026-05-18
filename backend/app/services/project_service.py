@@ -13,7 +13,7 @@ class ProjectService:
     BASE_DIR = Path(__file__).resolve().parents[2]
     STORAGE_DIR = BASE_DIR / "storage"
     PROJECTS_DIR = STORAGE_DIR / "projects"
-    MAX_UPLOAD_BYTES = 80 * 1024 * 1024
+    MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
     @classmethod
     def ensure_project_dirs(cls, project_id: str) -> None:
