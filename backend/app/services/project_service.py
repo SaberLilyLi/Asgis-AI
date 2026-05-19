@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.models.task_model import now_iso
 from app.services.task_db_service import TaskDBService
 
@@ -13,7 +14,7 @@ class ProjectService:
     BASE_DIR = Path(__file__).resolve().parents[2]
     STORAGE_DIR = BASE_DIR / "storage"
     PROJECTS_DIR = STORAGE_DIR / "projects"
-    MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+    MAX_UPLOAD_BYTES = settings.MAX_UPLOAD_BYTES
 
     @classmethod
     def ensure_project_dirs(cls, project_id: str) -> None:

@@ -2,16 +2,21 @@ import logging
 import uuid
 import zipfile
 from io import BytesIO
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, File, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.config import settings
 from app.models.error_model import raise_api_error
 from app.models.rule_model import RepoAnalyzeRequest
 from app.services.analysis_task_service import AnalysisTaskService
+from app.services.cleanup_service import CleanupService
+from app.services.evidence_collector_service import EvidenceCollectorService
 from app.services.project_service import ProjectService
 from app.services.repo_service import RepoService
 from app.services.rules_generator_service import RulesGeneratorService
+from app.services.scan_service import ScanService
 from app.services.task_db_service import TaskDBService
 
 
@@ -24,6 +29,12 @@ def list_tasks(limit: int = 50) -> dict:
     """列出最近分析任务，保留旧接口兼容当前前端。"""
     safe_limit = max(1, min(limit, 200))
     return {"items": TaskDBService.list_tasks(safe_limit)}
+
+
+@router.post("/api/tasks/cleanup")
+def cleanup_tasks(retention_days: int | None = None, max_count: int | None = None) -> dict:
+    """手动清理历史任务文件和数据库记录。"""
+    return CleanupService.cleanup_tasks(retention_days, max_count)
 
 
 @router.post("/api/tasks/upload")
@@ -40,7 +51,12 @@ async def create_upload_task(background_tasks: BackgroundTasks, file: UploadFile
         ProjectService.ensure_project_dirs(task_id)
         content = await file.read()
         if len(content) > ProjectService.MAX_UPLOAD_BYTES:
-            raise_api_error(413, "ZIP_TOO_LARGE", "上传文件过大，当前限制为 100MB", "请删除 node_modules、dist 等目录后重新压缩上传。")
+            raise_api_error(
+                413,
+                "ZIP_TOO_LARGE",
+                f"上传文件过大，当前限制为 {settings.MAX_UPLOAD_MB}MB",
+                "请删除 node_modules、dist 等目录后重新压缩上传。",
+            )
 
         zip_path.write_bytes(content)
         TaskDBService.create_task(task_id, "zip", file.filename)
@@ -197,6 +213,7 @@ def _build_rules_zip(generated: dict[str, str]) -> BytesIO:
 def _build_task_result(task_id: str, project: dict) -> dict:
     """把内部分析结果转换成前端可直接渲染的标准结构。"""
     analysis = project.get("analysis", {})
+    analysis = _ensure_evidence_chain(task_id, project, analysis)
     tech = analysis.get("tech_stack", {})
     stats = analysis.get("stats", {})
     patterns = analysis.get("patterns", {})
@@ -222,6 +239,32 @@ def _build_task_result(task_id: str, project: dict) -> dict:
         },
         "download_url": f"/api/tasks/{task_id}/download",
     }
+
+
+def _ensure_evidence_chain(task_id: str, project: dict, analysis: dict) -> dict:
+    """Backfill Evidence Chain for completed tasks from an older backend process."""
+    patterns = analysis.setdefault("patterns", {})
+    if patterns.get("evidence_chain"):
+        return analysis
+
+    source_path = Path(str(project.get("source_path") or ""))
+    if not source_path.exists() or not source_path.is_dir():
+        logger.warning("Skip Evidence Chain backfill task_id=%s source_path=%s", task_id, source_path)
+        return analysis
+
+    try:
+        files = ScanService.scan_project(source_path)
+        patterns["evidence_chain"] = EvidenceCollectorService.collect(files)
+        ProjectService.save_project_analysis(
+            task_id,
+            str(project.get("source_type") or "zip"),
+            str(project.get("source_path") or source_path),
+            analysis,
+        )
+        logger.info("Backfilled Evidence Chain task_id=%s files=%s", task_id, len(files))
+    except Exception:
+        logger.exception("Evidence Chain backfill failed task_id=%s", task_id)
+    return analysis
 
 
 def _build_standard_tech_stack(tech: dict) -> dict:

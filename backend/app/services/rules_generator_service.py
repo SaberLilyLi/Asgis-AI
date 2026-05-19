@@ -15,16 +15,17 @@ class RulesGeneratorService:
         }
 
     @classmethod
-    def generate_rule_items(cls, analysis: dict[str, Any]) -> list[dict[str, str]]:
+    def generate_rule_items(cls, analysis: dict[str, Any]) -> list[dict[str, Any]]:
         """生成第一阶段 6 类结构化规则，稳定优先，不依赖大模型。"""
         tech = analysis.get("tech_stack", {})
         patterns = analysis.get("patterns", {})
+        evidence_chain = patterns.get("evidence_chain", {})
         framework = tech.get("frontend") or tech.get("project_type") or "Unknown"
         state_manager = tech.get("state") or "Unknown"
         ui_library = tech.get("ui") or "Unknown"
         build_tool = tech.get("build") or "Unknown"
 
-        return [
+        rule_items: list[dict[str, Any]] = [
             {
                 "id": "project-structure-001",
                 "category": "项目结构规则",
@@ -125,6 +126,160 @@ class RulesGeneratorService:
                 ),
             },
         ]
+
+        evidence_map = {
+            "api-call-001": evidence_chain.get("api", {}),
+            "state-001": evidence_chain.get("store", {}),
+            "route-permission-001": evidence_chain.get("router", {}),
+            "component-001": evidence_chain.get("component", {}),
+        }
+
+        return [
+            cls._with_default_evidence_fields(cls._attach_evidence_chain(item, evidence_map.get(item["id"], {})))
+            for item in rule_items
+        ]
+
+    @classmethod
+    def _attach_evidence_chain(cls, rule: dict[str, Any], evidence_chain: dict[str, Any]) -> dict[str, Any]:
+        """Attach collected Evidence Chain data to a structured rule."""
+        if not evidence_chain:
+            return rule
+
+        confidence = float(evidence_chain.get("confidence", 0.0) or 0.0)
+        quality_score = float(evidence_chain.get("quality_score", round(confidence * 100, 2)) or 0.0)
+        stability_score = float(evidence_chain.get("stability_score", 0.0) or 0.0)
+        consistency_score = float(evidence_chain.get("consistency_score", min(quality_score, stability_score)) or 0.0)
+        conflict_detected = bool(evidence_chain.get("conflict_detected", False))
+        conflict_reason = evidence_chain.get("conflict_reason")
+        level_result = cls._evaluate_rule_level(
+            default_level=rule.get("level", "important"),
+            confidence=confidence,
+            quality_score=quality_score,
+            stability_score=stability_score,
+            consistency_score=consistency_score,
+            conflict_detected=conflict_detected,
+            level_override=rule.get("level_override"),
+        )
+        return {
+            **rule,
+            "level": level_result["level"],
+            "evidence": evidence_chain.get("evidence", []),
+            "matched_patterns": evidence_chain.get("matched_patterns", []),
+            "match_count": evidence_chain.get("match_count", 0),
+            "confidence": confidence,
+            "quality_score": quality_score,
+            "stability_score": stability_score,
+            "consistency_score": consistency_score,
+            "conflict_detected": conflict_detected,
+            "conflict_reason": conflict_reason,
+            "recommendation": cls._build_recommendation(
+                rule_id=str(rule.get("id", "")),
+                confidence=confidence,
+                quality_score=quality_score,
+                stability_score=stability_score,
+                conflict_detected=conflict_detected,
+                conflict_reason=conflict_reason,
+            ),
+            "level_log": level_result["level_log"],
+        }
+
+    @staticmethod
+    def _evaluate_rule_level(
+        default_level: str,
+        confidence: float,
+        quality_score: float,
+        stability_score: float,
+        consistency_score: float,
+        conflict_detected: bool = False,
+        level_override: str | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate rule level from quality signals while preserving manual override."""
+        if level_override in {"required", "important", "optional"}:
+            return {
+                "level": level_override,
+                "level_log": {
+                    "mode": "manual_override",
+                    "default_level": default_level,
+                    "level_override": level_override,
+                    "confidence": confidence,
+                    "quality_score": quality_score,
+                    "stability_score": stability_score,
+                    "consistency_score": consistency_score,
+                    "conflict_detected": conflict_detected,
+                },
+            }
+
+        if conflict_detected:
+            level = "optional" if confidence < 0.6 or stability_score < 60 else "important"
+            reason = "conflict detected, level downgraded"
+        elif confidence >= 0.85 and quality_score >= 80 and stability_score >= 80 and consistency_score >= 80:
+            level = "required"
+            reason = "confidence>=0.85, quality>=80, stability>=80, consistency>=80"
+        elif confidence >= 0.6 and quality_score >= 60 and stability_score >= 60:
+            level = "important"
+            reason = "confidence>=0.6, quality>=60, stability>=60"
+        else:
+            level = "optional"
+            reason = "quality signals below important threshold"
+
+        return {
+            "level": level,
+            "level_log": {
+                "mode": "auto",
+                "default_level": default_level,
+                "confidence": confidence,
+                "quality_score": quality_score,
+                "stability_score": stability_score,
+                "consistency_score": consistency_score,
+                "conflict_detected": conflict_detected,
+                "reason": reason,
+            },
+        }
+
+    @staticmethod
+    def _build_recommendation(
+        rule_id: str,
+        confidence: float,
+        quality_score: float,
+        stability_score: float,
+        conflict_detected: bool,
+        conflict_reason: str | None,
+    ) -> str:
+        if conflict_detected:
+            if rule_id == "api-call-001":
+                return "项目中检测到多种 API 调用方式，建议统一到 request.ts 或既有请求封装。"
+            if rule_id == "state-001":
+                return "项目存在多种状态管理方案混用，建议统一状态管理入口。"
+            if rule_id == "route-permission-001":
+                return "项目存在路由方案混用迹象，建议统一路由与权限入口。"
+            return conflict_reason or "检测到规范冲突，建议先统一现有实现再强制规则。"
+
+        if confidence < 0.3 or quality_score < 40:
+            return "当前证据较弱，建议仅作为参考规则，新增代码前先人工确认项目约定。"
+        if stability_score < 40:
+            return "项目规范稳定性较低，建议先收敛现有实现后再提升规则等级。"
+        if stability_score < 70:
+            return "项目大部分实现已有方向，但仍存在不一致，建议按主流模式逐步统一。"
+        if quality_score >= 80 and stability_score >= 80:
+            return "规则证据充分且项目实现稳定，可作为主要开发约束。"
+        return "规则具备一定证据，建议作为重要参考并结合相邻文件确认。"
+
+    @staticmethod
+    def _with_default_evidence_fields(rule: dict[str, Any]) -> dict[str, Any]:
+        """Ensure every structured rule exposes Evidence Chain and Quality fields."""
+        return {
+            **rule,
+            "evidence": rule.get("evidence", []),
+            "matched_patterns": rule.get("matched_patterns", []),
+            "match_count": rule.get("match_count", 0),
+            "confidence": rule.get("confidence", 0.0),
+            "quality_score": rule.get("quality_score", 0.0),
+            "stability_score": rule.get("stability_score", 0.0),
+            "consistency_score": rule.get("consistency_score", 0.0),
+            "conflict_detected": rule.get("conflict_detected", False),
+            "conflict_reason": rule.get("conflict_reason"),
+            "recommendation": rule.get("recommendation", ""),
+        }
 
     @staticmethod
     def _unique_files(*groups: list[str]) -> list[str]:

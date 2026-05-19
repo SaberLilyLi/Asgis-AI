@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
+from app.config import settings
 from app.models.error_model import raise_api_error
 from app.services.analysis_task_service import AnalysisTaskService
 from app.services.project_service import ProjectService
@@ -27,7 +28,12 @@ async def upload_project(background_tasks: BackgroundTasks, file: UploadFile = F
         ProjectService.ensure_project_dirs(project_id)
         content = await file.read()
         if len(content) > ProjectService.MAX_UPLOAD_BYTES:
-            raise_api_error(413, "ZIP_TOO_LARGE", "上传文件过大，当前限制为 100MB", "请删除 node_modules、dist 等目录后重新压缩上传。")
+            raise_api_error(
+                413,
+                "ZIP_TOO_LARGE",
+                f"上传文件过大，当前限制为 {settings.MAX_UPLOAD_MB}MB",
+                "请删除 node_modules、dist 等目录后重新压缩上传。",
+            )
 
         zip_path.write_bytes(content)
         TaskDBService.create_task(project_id, "zip", file.filename)

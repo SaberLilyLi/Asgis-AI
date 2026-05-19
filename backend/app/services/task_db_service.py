@@ -167,6 +167,54 @@ class TaskDBService:
             return [cls._row_to_dict(row) for row in rows]
 
     @classmethod
+    def list_cleanup_candidates(cls, cutoff_iso: str, keep_latest: int) -> list[dict[str, Any]]:
+        """查询需要清理的任务，包含过期任务和超出保留数量的旧任务。"""
+        cls.init_db()
+        keep_latest = max(0, keep_latest)
+        with cls._connect() as conn:
+            expired_rows = conn.execute(
+                """
+                SELECT * FROM analysis_tasks
+                WHERE status IN ('success', 'failed')
+                  AND COALESCE(completed_at, updated_at, created_at) < ?
+                ORDER BY created_at ASC
+                """,
+                (cutoff_iso,),
+            ).fetchall()
+            overflow_rows = conn.execute(
+                """
+                SELECT * FROM analysis_tasks
+                WHERE project_id NOT IN (
+                    SELECT project_id FROM analysis_tasks
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                )
+                ORDER BY created_at ASC
+                """,
+                (keep_latest,),
+            ).fetchall()
+
+        candidates: dict[str, dict[str, Any]] = {}
+        for row in [*expired_rows, *overflow_rows]:
+            payload = cls._row_to_dict(row)
+            candidates[payload["project_id"]] = payload
+        return list(candidates.values())
+
+    @classmethod
+    def delete_tasks(cls, project_ids: list[str]) -> int:
+        """批量删除任务数据库记录。"""
+        if not project_ids:
+            return 0
+        cls.init_db()
+        with cls._connect() as conn:
+            cursor = conn.executemany(
+                "DELETE FROM analysis_tasks WHERE project_id = ?",
+                [(project_id,) for project_id in project_ids],
+            )
+            conn.commit()
+        return cursor.rowcount if cursor.rowcount is not None else len(project_ids)
+
+    @classmethod
     def _connect(cls) -> sqlite3.Connection:
         """创建 SQLite 连接。"""
         conn = sqlite3.connect(cls.DB_PATH)

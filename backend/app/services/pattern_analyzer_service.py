@@ -2,6 +2,8 @@ import re
 from collections import Counter
 from typing import Any
 
+from app.services.evidence_collector_service import EvidenceCollectorService
+
 
 class PatternAnalyzerService:
     """工程规范分析服务，使用轻量 Pattern Analysis 抽取项目习惯。"""
@@ -21,6 +23,7 @@ class PatternAnalyzerService:
             "permission": cls._analyze_permission(files, joined_content),
             "miniapp": cls._analyze_miniapp(paths, joined_content),
             "organization": cls._analyze_organization(paths, tech_stack),
+            "evidence_chain": EvidenceCollectorService.collect(files),
         }
         return {
             "tech_stack": tech_stack,

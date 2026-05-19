@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import repo, rules, status, tasks, upload
+from app.routes import config, repo, rules, status, tasks, upload
 
 
 # 配置基础日志，所有路由和服务可复用同一日志格式。
@@ -31,6 +31,7 @@ app.include_router(repo.router)
 app.include_router(rules.router)
 app.include_router(status.router)
 app.include_router(tasks.router)
+app.include_router(config.router)
 
 
 @app.get("/health")

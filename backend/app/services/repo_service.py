@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlparse, urlunparse
 
+from app.config import settings
+
 
 @dataclass(frozen=True)
 class RepoError:
@@ -20,8 +22,8 @@ class RepoError:
 class RepoService:
     """Git 仓库服务，负责 URL 校验、Token clone 和安全限制。"""
 
-    CLONE_TIMEOUT_SECONDS = 180
-    MAX_REPO_BYTES = 200 * 1024 * 1024
+    CLONE_TIMEOUT_SECONDS = settings.CLONE_TIMEOUT_SECONDS
+    MAX_REPO_BYTES = settings.MAX_REPO_BYTES
     ALLOWED_HOSTS = {"github.com", "gitee.com"}
 
     @classmethod
