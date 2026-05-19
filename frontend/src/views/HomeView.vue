@@ -11,7 +11,7 @@
 
     <section class="workspace-grid">
       <div class="left-column">
-        <ProjectImportPanel :loading="creating" @upload="handleUpload" @git="handleGit" />
+        <ProjectImportPanel :loading="creating" :limits="limits" @upload="handleUpload" @git="handleGit" />
         <TaskProgressPanel :task="task" />
         <TechStackPanel :result="result" />
         <DownloadPanel :result="result" :loading="downloading" @download="handleDownload" />
@@ -20,7 +20,7 @@
       <div class="right-column">
         <el-card shadow="never" class="panel-card">
           <template #header>结构化规则</template>
-          <div v-if="result" class="analysis-list">
+          <div v-if="result?.rules?.length" class="analysis-list">
             <div v-for="rule in result.rules" :key="rule.id" class="analysis-item">
               <div>
                 <strong>{{ rule.category }}：{{ rule.title }}</strong>
@@ -32,14 +32,41 @@
                   </div>
                   <em v-else>未识别到明确证据，需参考项目已有模式</em>
                 </div>
+                <div class="rule-chain">
+                  <div class="rule-chain-metrics">
+                    <span>置信度 {{ formatPercent(rule.confidence) }}</span>
+                    <span>命中 {{ rule.match_count || 0 }} 次</span>
+                  </div>
+                  <div class="quality-grid">
+                    <span :class="['quality-pill', qualityClass(rule.quality_score)]">质量 {{ formatScore(rule.quality_score) }}</span>
+                    <span :class="['quality-pill', qualityClass(rule.stability_score)]">稳定 {{ formatScore(rule.stability_score) }}</span>
+                    <span :class="['quality-pill', qualityClass(rule.consistency_score)]">一致 {{ formatScore(rule.consistency_score) }}</span>
+                  </div>
+                  <div v-if="rule.conflict_detected" class="rule-warning">
+                    <strong>检测到冲突</strong>
+                    <span>{{ rule.conflict_reason || '当前规则存在规范冲突，请先确认项目主流模式。' }}</span>
+                  </div>
+                  <div v-if="rule.recommendation" class="rule-recommendation">
+                    {{ rule.recommendation }}
+                  </div>
+                  <div v-if="rule.matched_patterns?.length" class="evidence-files">
+                    <code v-for="pattern in rule.matched_patterns" :key="`${rule.id}-pattern-${pattern}`">{{ pattern }}</code>
+                  </div>
+                  <div v-if="rule.evidence?.length" class="snippet-list">
+                    <div v-for="item in rule.evidence" :key="`${rule.id}-${item.file}-${item.line}-${item.snippet}`" class="snippet-item">
+                      <code>{{ item.file }}:{{ item.line }}</code>
+                      <pre>{{ item.snippet }}</pre>
+                    </div>
+                  </div>
+                </div>
               </div>
               <el-tag size="small" effect="plain">{{ rule.level }}</el-tag>
             </div>
           </div>
-          <el-empty v-else description="分析完成后展示 6 类结构化规则" />
+          <el-empty v-else :description="result ? '未返回结构化规则，请重新分析或检查后端结果' : '分析完成后展示 6 类结构化规则'" />
         </el-card>
 
-        <RulePreviewTabs :result="result" />
+        <RulePreviewTabs :result="result" :key="result?.project_id || 'empty-rules-preview'" />
       </div>
     </section>
   </main>
@@ -47,21 +74,50 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import DownloadPanel from '../components/DownloadPanel.vue'
 import ProjectImportPanel from '../components/ProjectImportPanel.vue'
 import RulePreviewTabs from '../components/RulePreviewTabs.vue'
 import TaskProgressPanel from '../components/TaskProgressPanel.vue'
 import TechStackPanel from '../components/TechStackPanel.vue'
-import { createGitTask, downloadTaskPackage, getTaskResult, getTaskStatus, toTaskError, uploadProjectZip } from '../api/task'
-import type { TaskInfo, TaskResult } from '../types/task'
+import { createGitTask, downloadTaskPackage, getAppLimits, getTaskResult, getTaskStatus, toTaskError, uploadProjectZip } from '../api/task'
+import type { AppLimits, TaskInfo, TaskResult } from '../types/task'
 
 const taskId = ref('')
 const task = ref<TaskInfo | null>(null)
 const result = ref<TaskResult | null>(null)
+const limits = ref<AppLimits | null>(null)
 const creating = ref(false)
 const downloading = ref(false)
 let pollingTimer: number | undefined
+
+function normalizeNumber(value: number | undefined | null) {
+  return Number.isFinite(value) ? Number(value) : 0
+}
+
+function formatPercent(value: number | undefined | null) {
+  return `${Math.round(normalizeNumber(value) * 100)}%`
+}
+
+function formatScore(score: number | undefined | null) {
+  return Math.round(normalizeNumber(score))
+}
+
+function qualityClass(score: number | undefined | null) {
+  const normalized = normalizeNumber(score)
+  if (normalized >= 80) return 'quality-high'
+  if (normalized >= 60) return 'quality-medium'
+  return 'quality-low'
+}
+
+onMounted(async () => {
+  try {
+    limits.value = await getAppLimits()
+  } catch (error) {
+    const detail = toTaskError(error)
+    ElMessage.warning(`读取系统限制失败：${detail.suggestion}`)
+  }
+})
 
 async function handleUpload(file: File) {
   await createTask(() => uploadProjectZip(file))

@@ -15,7 +15,9 @@
             <el-icon class="upload-icon"><UploadFilled /></el-icon>
             <div class="upload-title">拖拽或选择 ZIP 项目</div>
             <template #tip>
-              <div class="upload-tip">自动忽略 node_modules、dist、.git 等目录。</div>
+              <div class="upload-tip">
+                ZIP 最大 {{ limits?.max_upload_mb || 100 }}MB，压缩前建议删除 node_modules、dist、.git。
+              </div>
             </template>
           </el-upload>
           <el-button class="full-button" type="primary" :loading="loading" :disabled="!selectedFile" @click="submitZip">
@@ -36,7 +38,12 @@
               <el-icon><Lock /></el-icon>
             </template>
           </el-input>
-          <el-alert title="Token 只用于本次 clone，不写入分析结果。" type="info" :closable="false" show-icon />
+          <el-alert
+            :title="`Git 仓库最大 ${limits?.max_repo_mb || 200}MB，clone 超时 ${limits?.clone_timeout_seconds || 180} 秒。Token 只用于本次 clone，不写入分析结果。`"
+            type="info"
+            :closable="false"
+            show-icon
+          />
           <el-button class="full-button" type="primary" :loading="loading" :disabled="!gitUrl" @click="submitGit">
             克隆并分析
           </el-button>
@@ -48,10 +55,12 @@
 
 <script setup lang="ts">
 import { Link, Lock, UploadFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 import { ref } from 'vue'
+import type { AppLimits } from '../types/task'
 
-defineProps<{ loading: boolean }>()
+const props = defineProps<{ loading: boolean; limits: AppLimits | null }>()
 const emit = defineEmits<{
   upload: [file: File]
   git: [payload: { gitUrl: string; accessToken?: string }]
@@ -63,11 +72,22 @@ const gitUrl = ref('')
 const accessToken = ref('')
 
 function handleFileChange(file: UploadFile) {
-  selectedFile.value = file.raw || null
+  const rawFile = file.raw || null
+  if (rawFile && props.limits && rawFile.size > props.limits.max_upload_mb * 1024 * 1024) {
+    selectedFile.value = null
+    ElMessage.warning(`ZIP 文件超过 ${props.limits.max_upload_mb}MB，请精简后重新上传。`)
+    return
+  }
+  selectedFile.value = rawFile
 }
 
 function submitZip() {
-  if (selectedFile.value) emit('upload', selectedFile.value)
+  if (!selectedFile.value) return
+  if (props.limits && selectedFile.value.size > props.limits.max_upload_mb * 1024 * 1024) {
+    ElMessage.warning(`ZIP 文件超过 ${props.limits.max_upload_mb}MB，请精简后重新上传。`)
+    return
+  }
+  emit('upload', selectedFile.value)
 }
 
 function submitGit() {

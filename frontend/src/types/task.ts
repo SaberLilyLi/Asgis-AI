@@ -31,6 +31,31 @@ export interface ProjectSummary {
   store_files: number
 }
 
+export interface RuleEvidence {
+  file: string
+  line: number
+  snippet: string
+}
+
+export interface PatternExample {
+  file: string
+  snippet: string
+}
+
+export interface PatternItem {
+  id: string
+  category: string
+  name: string
+  description: string
+  patterns: string[]
+  files: string[]
+  occurrences: number
+  coverage: number
+  weight: number
+  confidence: number
+  examples: PatternExample[]
+}
+
 export interface RuleItem {
   id: string
   category: string
@@ -38,6 +63,16 @@ export interface RuleItem {
   description: string
   level: 'required' | 'important' | 'optional'
   content: string
+  evidence: RuleEvidence[]
+  matched_patterns: string[]
+  match_count: number
+  confidence: number
+  quality_score: number
+  stability_score: number
+  consistency_score: number
+  conflict_detected: boolean
+  conflict_reason: string | null
+  recommendation: string
   evidence_files?: string[]
 }
 
@@ -65,4 +100,10 @@ export interface TaskErrorDetail {
 
 export interface TaskCreateResponse {
   task_id: string
+}
+
+export interface AppLimits {
+  max_upload_mb: number
+  max_repo_mb: number
+  clone_timeout_seconds: number
 }
